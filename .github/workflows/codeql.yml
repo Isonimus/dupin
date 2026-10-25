@@ -1,0 +1,86 @@
+name: CodeQL
+
+# Semantic security analysis of the firmware sources. Findings surface as Code Scanning
+# alerts in the Security tab (ADR-0033). Inert until this repo has a remote.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  schedule:
+    - cron: '27 4 * * 1'  # weekly, Monday 04:27 UTC
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  security-events: write
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze C/C++
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # CodeQL for c-cpp traces a real compilation, so the device firmware is built between
+      # init and analyze (autobuild cannot drive PlatformIO). Pinned PlatformIO and a cache
+      # keyed on platformio.ini, exactly as firmware.yml does, so the toolchain is not
+      # re-downloaded cold every run (ADR-0008).
+      - name: Install PlatformIO
+        run: pip install 'platformio==6.1.18'
+
+      - name: Cache PlatformIO toolchains
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: platformio-${{ runner.os }}-
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+          config-file: ./.github/codeql/codeql-config.yml
+
+      # make build is the device compile (pio run -e cardputer). CI calls the make target
+      # rather than the raw command so it cannot drift from what a developer runs (ADR-0007).
+      - name: Build firmware (cardputer)
+        run: make build
+
+      # Analyze, but do NOT upload yet: paths-ignore is inert for compiled languages, so the
+      # libraries compiled into .pio/libdeps have also been analyzed. Strip those by path
+      # before upload.
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:c-cpp"
+          upload: false
+          output: sarif-results
+
+      # Drop every result located under .pio/, lib/, or test/ - dependencies and host mocks we
+      # do not own and will not patch. jq keeps this dependency-free and is null-safe, so a
+      # result without a location is kept rather than crashing the filter.
+      - name: Filter dependencies from results
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in sarif-results/*.sarif; do
+            jq '(.runs[].results) |= map(select(
+              ((.locations[0].physicalLocation.artifactLocation.uri)? // "") as $u
+              | ($u|startswith(".pio/")) or ($u|startswith("lib/")) or ($u|startswith("test/"))
+              | not))' "$f" > "$f.tmp"
+            mv "$f.tmp" "$f"
+          done
+
+      - name: Upload filtered results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: sarif-results
+          category: "/language:c-cpp"

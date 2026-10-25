@@ -1,0 +1,97 @@
+name: Release
+
+# Cut a GitHub Release with installable firmware when a version tag (v*) is pushed. Produces
+# the app image (M5Launcher-installable, firmware.bin unmodified), a full factory (merged)
+# image for a fresh esptool install at 0x0, and SHA-256 checksums, for the cardputer target
+# (ADR-0033). The per-push build/test gates live in firmware.yml. Inert until this repo has a
+# remote. The browser flasher and GitHub Pages are a deferred follow-up (LEDGER).
+on:
+  push:
+    tags:
+      - 'v*'
+
+# gh release create writes to the repo's Releases using the built-in GITHUB_TOKEN.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: cardputer firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # Pinned PlatformIO to match firmware.yml (ADR-0008), and esptool pinned so the
+      # merge-bin CLI is deterministic (5.x non-deprecated form).
+      - name: Install PlatformIO and esptool
+        run: pip install 'platformio==6.1.18' 'esptool==5.2.0'
+
+      - name: Cache PlatformIO toolchains
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: platformio-${{ runner.os }}-
+
+      # make build is pio run -e cardputer; CI calls the make target, not the raw command
+      # (ADR-0007), so a release build cannot drift from what firmware.yml and a developer run.
+      - name: Build cardputer firmware
+        run: make build
+
+      - name: Package release artifacts
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          build=.pio/build/cardputer
+          # boot_app0.bin lives inside a versioned framework package; locate it rather than
+          # hardcode the path.
+          boot_app0="$(find "$HOME/.platformio/packages" -name boot_app0.bin | head -1)"
+          test -n "$boot_app0"
+          mkdir -p dist
+
+          # App image: firmware.bin unmodified, flashed into an app-partition slot (e.g. by
+          # M5Launcher) from a direct URL.
+          cp "$build/firmware.bin" "dist/dupin-cardputer-${version}-app.bin"
+
+          # Full factory image for a fresh esptool install at 0x0. Offsets are the
+          # default_8MB.csv layout (S3 bootloader at 0x0, partitions 0x8000, otadata 0xe000,
+          # app0 0x10000).
+          #
+          # flash-mode MUST be dio, not qio: the S3 ROM reads the 2nd-stage bootloader using
+          # the mode in the bootloader header BEFORE quad mode can be enabled, so a qio header
+          # makes the ROM misread it into a reset loop (a hard brick that esptool image_info
+          # does NOT catch). The images run quad mode at runtime, not in the header.
+          esptool --chip esp32s3 merge-bin \
+            -o "dist/dupin-cardputer-${version}-factory.bin" \
+            --flash-mode dio --flash-freq 80m --flash-size 8MB \
+            0x0 "$build/bootloader.bin" \
+            0x8000 "$build/partitions.bin" \
+            0xe000 "$boot_app0" \
+            0x10000 "$build/firmware.bin"
+
+          # Fail loud if the factory bootloader header is not dio. Refuse to publish a
+          # bricking image.
+          mode="$(od -An -tx1 -j2 -N1 "dist/dupin-cardputer-${version}-factory.bin" | tr -d ' ')"
+          echo "factory bootloader flash-mode byte: 0x${mode} (want 0x02 = dio)"
+          test "$mode" = "02" || { echo "ERROR: factory bootloader is not dio; refusing to publish a brick"; exit 1; }
+
+          ( cd dist && sha256sum dupin-cardputer-*.bin > SHA256SUMS.txt )
+          ls -la dist
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          gh release create "$version" \
+            --title "Dupin $version" \
+            --generate-notes \
+            "dist/dupin-cardputer-${version}-app.bin" \
+            "dist/dupin-cardputer-${version}-factory.bin" \
+            dist/SHA256SUMS.txt

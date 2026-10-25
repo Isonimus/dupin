@@ -1,0 +1,91 @@
+# The two firmware gates, as two independent jobs.
+#
+# They are separate on purpose. ADR-0006 measured that neither gate catches what the other
+# does — a `%lu` on a uint32_t fails the host suite and passes the device build, and a `%u`
+# on an uncast one does the reverse. Run sequentially in one job, the first failure hides
+# the second result, which is precisely the information the split exists to provide. Split,
+# a red run says which side broke.
+#
+# The device half of the harness — the serial-driven verify scripts of ADR-0002 — is
+# deliberately absent and must stay absent until a runner with hardware on a USB port
+# exists. `make build` is a compile, not a device test; a green one is explicitly not
+# evidence of behaviour (CLAUDE.md invariant 3).
+name: firmware
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  host-suite:
+    name: host suite (make test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # Pinned, because an unpinned PlatformIO is a build that changes under a repo that
+      # did not. The version is the one these gates were measured green against.
+      - name: Install PlatformIO
+        run: pip install 'platformio==6.1.18'
+
+      # env:native pulls only the native platform and Unity — no cross toolchain — so this
+      # job needs no package cache and stays fast enough to be the first signal.
+      - name: Host suite
+        run: make test
+
+  device-build:
+    name: device build (make build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install PlatformIO
+        run: pip install 'platformio==6.1.18'
+
+      # A cold install of the Xtensa toolchain and the Arduino framework measured 2.4 GB
+      # of core dir (2.0 GB of it packages/) and 94 s including the compile — worth caching,
+      # and worth a future reader knowing that roughly a quarter of the repo's 10 GB cache
+      # budget is being spent here. Keyed on platformio.ini, which is where the platform and
+      # lib_deps that determine the contents are declared. That key is now load-bearing: the
+      # platform is pinned to an exact release in that file, so a bump changes the hash and
+      # gets a cold toolchain rather than a stale cached one (ADR-0008).
+      - name: Cache PlatformIO toolchains
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: platformio-${{ runner.os }}-
+
+      - name: Device build
+        run: make build
+
+  # Static analysis over our own src/ only. A separate job, not a step in device-build: it
+  # needs an apt install and no PlatformIO toolchain, so folding it in would pay for a cross
+  # toolchain it never uses. Gates on cppcheck's default `error` severity via `make cppcheck`,
+  # the same command a developer runs (ADR-0007). lib deps are vendored into .pio and out of
+  # scope by construction (the target passes `-I src src/`).
+  cppcheck:
+    name: static analysis (cppcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: make cppcheck

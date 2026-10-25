@@ -1,0 +1,54 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Build artifacts
+.pio/build/
+
+# IDE
+.vscode/.browse.c_cpp.db*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.swp
+*.swo
+*~
+*.tmp
+
+# Logs
+*.log
+
+# Compiled files
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+
+# Test artifacts
+test_results/
+coverage/
+
+# Local configuration (if any)
+local_config.h
+secrets.h
+
+# Device verify harness output (transcripts and measured numbers, ADR-0009)
+verify-artifacts/
+
+# Maintainer-only material, kept local and out of the public tree (ADR-0033).
+# The Stele documentation method, its operator config, the open-work ledger, and
+# internal planning docs. The decision records under adr/ ship as static artifacts;
+# the machinery that maintains them does not.
+.claude/
+.agent/
+LEDGER.md
+docs/epics/
+.github/workflows/docs.yml
