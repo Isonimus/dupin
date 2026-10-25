@@ -37,6 +37,9 @@
 #include "ui/display.h"
 #include "ui/case_list.h"
 
+// Utilities
+#include "utils/i2c_scan.h"
+
 // Storage
 #include "storage/session_manager.h"
 
@@ -348,13 +351,9 @@ static void reportClockChip() {
     }
     bool answered[kI2cScannedAddressEnd] = {};
     M5.In_I2C.scanID(answered);
-    char addresses[(kI2cScannedAddressEnd - kI2cFirstScannedAddress) * (sizeof(" 0x00") - 1) + 1] = "";
-    size_t written = 0;
-    for (size_t address = kI2cFirstScannedAddress; address < kI2cScannedAddressEnd; ++address) {
-        if (!answered[address]) continue;
-        written += static_cast<size_t>(snprintf(addresses + written, sizeof(addresses) - written,
-                                                " 0x%02X", static_cast<unsigned>(address)));
-    }
+    char addresses[(kI2cScannedAddressEnd - kI2cFirstScannedAddress) * dupin::kI2cAddressRunChars + 1] = "";
+    const size_t written = dupin::formatI2cScanAddresses(addresses, sizeof(addresses), answered,
+                                                         kI2cFirstScannedAddress, kI2cScannedAddressEnd);
     Serial.printf("[BOOT] RTC: %s; board=%s; internal I2C answers at%s\n", clock, detected,
                   written == 0 ? " nothing" : addresses);
 }
