@@ -32,7 +32,7 @@ jobs:
         run: pip install 'platformio==6.1.18' 'esptool==5.2.0'
 
       - name: Cache PlatformIO toolchains
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.platformio
           key: platformio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
