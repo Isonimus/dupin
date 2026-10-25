@@ -24,7 +24,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
       # Pinned PlatformIO to match firmware.yml (ADR-0008), and esptool pinned so the
       # merge-bin CLI is deterministic (5.x non-deprecated form).

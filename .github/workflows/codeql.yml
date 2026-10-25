@@ -27,7 +27,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
       # CodeQL for c-cpp traces a real compilation, so the device firmware is built between
       # init and analyze (autobuild cannot drive PlatformIO). Pinned PlatformIO and a cache

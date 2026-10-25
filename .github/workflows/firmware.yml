@@ -30,7 +30,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
       # Pinned, because an unpinned PlatformIO is a build that changes under a repo that
       # did not. The version is the one these gates were measured green against.
@@ -51,7 +50,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
       - name: Install PlatformIO
         run: pip install 'platformio==6.1.18'
