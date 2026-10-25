@@ -44,7 +44,7 @@ jobs:
           restore-keys: platformio-${{ runner.os }}-
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: c-cpp
           config-file: ./.github/codeql/codeql-config.yml
@@ -58,7 +58,7 @@ jobs:
       # libraries compiled into .pio/libdeps have also been analyzed. Strip those by path
       # before upload.
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:c-cpp"
           upload: false
@@ -80,7 +80,7 @@ jobs:
           done
 
       - name: Upload filtered results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: sarif-results
           category: "/language:c-cpp"
